@@ -594,7 +594,10 @@ and, for the common fields, as `NIXBOT_EVENT_KIND`, `NIXBOT_ACTOR`,
   `body`, `createdAt`.
 - `build`: `number`, `url`, `status`, `branch`, `rev`. For `build_finished` it
   also has `previousStatus` and `failedAttrs`, and `rev` is the pushed commit.
-- `command`, `args`: for `comment`.
+- `command`, `args`: for `comment`. A `comment` also gets the build's details in
+  `build`: `error`, `evalWarnings` (`level`, `message`, `count`), `attributes`
+  (count per status) and `failed`, up to 20 failed attributes with `attr`,
+  `status` and the last 3000 characters of their `error`.
 
 ### Conditions
 

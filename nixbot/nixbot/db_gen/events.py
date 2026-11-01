@@ -6,9 +6,13 @@
 from __future__ import annotations
 
 __all__: collections.abc.Sequence[str] = (
+    "AttrStatusCountsRow",
+    "FailedAttrErrorsRow",
     "QueryResults",
     "ResetEventEffectRow",
     "SupersedeEventEffectsRow",
+    "attr_status_counts",
+    "failed_attr_errors",
     "failed_attr_names",
     "latest_build_for_pr",
     "previous_finished_status",
@@ -44,6 +48,19 @@ class SupersedeEventEffectsRow:
 class ResetEventEffectRow:
     id_: int
     lock: str | None
+
+
+@dataclasses.dataclass()
+class AttrStatusCountsRow:
+    status: str
+    n: int
+
+
+@dataclasses.dataclass()
+class FailedAttrErrorsRow:
+    attr: str
+    status: str
+    error: str
 
 
 UPSERT_EVENT_EFFECT: typing.Final[str] = """-- name: UpsertEventEffect :one
@@ -122,6 +139,20 @@ SELECT attr FROM build_attributes
 WHERE build_id = $1
   AND status IN ('failed', 'failed_eval', 'dependency_failed', 'cached_failure')
 ORDER BY attr LIMIT 50
+"""
+
+ATTR_STATUS_COUNTS: typing.Final[str] = """-- name: AttrStatusCounts :many
+SELECT status, count(*)::bigint AS n FROM build_attributes
+WHERE build_id = $1
+GROUP BY status ORDER BY status
+"""
+
+FAILED_ATTR_ERRORS: typing.Final[str] = """-- name: FailedAttrErrors :many
+SELECT attr, status, right(coalesce(error, ''), 3000)::text AS error
+FROM build_attributes
+WHERE build_id = $1
+  AND status IN ('failed', 'failed_eval', 'dependency_failed', 'cached_failure')
+ORDER BY attr LIMIT 20
 """
 
 
@@ -228,3 +259,17 @@ async def previous_finished_status(conn: ConnectionLike, *, build_id: int) -> st
 
 def failed_attr_names(conn: ConnectionLike, *, build_id: int) -> QueryResults[str]:
     return QueryResults(conn, FAILED_ATTR_NAMES, operator.itemgetter(0), build_id)
+
+
+def attr_status_counts(conn: ConnectionLike, *, build_id: int) -> QueryResults[AttrStatusCountsRow]:
+    def _decode_hook(row: asyncpg.Record) -> AttrStatusCountsRow:
+        return AttrStatusCountsRow(status=row[0], n=row[1])
+
+    return QueryResults(conn, ATTR_STATUS_COUNTS, _decode_hook, build_id)
+
+
+def failed_attr_errors(conn: ConnectionLike, *, build_id: int) -> QueryResults[FailedAttrErrorsRow]:
+    def _decode_hook(row: asyncpg.Record) -> FailedAttrErrorsRow:
+        return FailedAttrErrorsRow(attr=row[0], status=row[1], error=row[2])
+
+    return QueryResults(conn, FAILED_ATTR_ERRORS, _decode_hook, build_id)

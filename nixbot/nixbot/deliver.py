@@ -481,6 +481,22 @@ async def _modified_files(
         raise TransientError(str(e)) from e
 
 
+async def _build_details(s: CIService, build: BuildRecord) -> dict[str, Any]:
+    """How far the build got and what broke, for a command asked about
+    it: the build's own error and eval warnings, attribute counts by
+    status, and the tail of each failed attribute's error."""
+    counts = await ev_q.attr_status_counts(s.pool, build_id=build.id_)
+    failed = await ev_q.failed_attr_errors(s.pool, build_id=build.id_)
+    return {
+        "error": build.error,
+        "evalWarnings": json.loads(build.eval_warnings) if build.eval_warnings else [],
+        "attributes": {r.status: r.n for r in counts},
+        "failed": [
+            {"attr": r.attr, "status": r.status, "error": r.error} for r in failed
+        ],
+    }
+
+
 async def _payload(
     s: CIService, project: Project, info: RepoInfo, build: BuildRecord, d: Delivery
 ) -> dict[str, Any]:
@@ -508,6 +524,7 @@ async def _payload(
                 info, d.pr_number
             )
     if d.command is not None:
+        payload["build"].update(await _build_details(s, build))
         payload["command"] = d.command
         payload["args"] = d.args or ""
     return payload

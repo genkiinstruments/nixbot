@@ -5,6 +5,7 @@ supersession of pending rows, and running with the payload."""
 from __future__ import annotations
 
 import dataclasses
+import json
 from dataclasses import replace
 from typing import TYPE_CHECKING, Any
 
@@ -366,6 +367,7 @@ async def test_comment_and_close_webhooks_deliver(env: dict[str, Any]) -> None:
     assert ran["teardown"]["pullRequest"]["number"] == PR.number
     assert ran["teardown"]["pullRequest"]["body"] == "why"
     assert "comments" not in ran["teardown"]["pullRequest"]
+    assert "attributes" not in ran["teardown"]["build"]
     # Merge did not cancel the PR build.
     assert (
         await pool.fetchval("SELECT status FROM builds WHERE id = $1", build_id)
@@ -771,3 +773,46 @@ async def test_tag_listing_failure_recorded_apart_from_build_effects(
         ("tag", sha, True)
     ]
     assert await builds_q.effects_summary(svc.pool, build_id=build_id) is None
+
+
+async def test_command_gets_build_details(env: dict[str, Any]) -> None:
+    """A /command can judge the build: how far it got and what broke."""
+    svc, build_id, pool = env["service"], env["build_id"], env["service"].pool
+    await pool.execute(
+        "UPDATE builds SET error = $2, eval_warnings = $3::jsonb WHERE id = $1",
+        build_id,
+        "eval broke",
+        json.dumps([{"level": "warning", "message": "w", "count": 2}]),
+    )
+    long_error = "x" * 5000 + "tail"
+    await pool.executemany(
+        "INSERT INTO build_attributes (build_id, attr, status, error)"
+        " VALUES ($1, $2, $3, $4)",
+        [
+            (build_id, "checks.a", "succeeded", None),
+            (build_id, "checks.b", "failed", long_error),
+            (build_id, "checks.c", "dependency_failed", None),
+        ],
+    )
+    forge_repo_id = await pool.fetchval(
+        "SELECT forge_repo_id FROM projects WHERE id = $1", env["project_id"]
+    )
+    await svc.submit(
+        PrComment(
+            forge="github",
+            forge_repo_id=forge_repo_id,
+            pr_number=7,
+            actor="github:alice",
+            command="apply",
+            args="",
+        )
+    )
+    await svc.drain_work()
+    [build] = [p["build"] for _k, n, p, _ in env["ran"] if n == "apply"]
+    assert build["error"] == "eval broke"
+    assert build["evalWarnings"] == [{"level": "warning", "message": "w", "count": 2}]
+    assert build["attributes"] == {"dependency_failed": 1, "failed": 1, "succeeded": 1}
+    assert build["failed"] == [
+        {"attr": "checks.b", "status": "failed", "error": long_error[-3000:]},
+        {"attr": "checks.c", "status": "dependency_failed", "error": ""},
+    ]

@@ -82,3 +82,17 @@ SELECT attr FROM build_attributes
 WHERE build_id = $1
   AND status IN ('failed', 'failed_eval', 'dependency_failed', 'cached_failure')
 ORDER BY attr LIMIT 50;
+
+-- name: AttrStatusCounts :many
+SELECT status, count(*)::bigint AS n FROM build_attributes
+WHERE build_id = $1
+GROUP BY status ORDER BY status;
+
+-- name: FailedAttrErrors :many
+-- The tail of each failed attribute's error, for effects answering a
+-- command; the whole log stays in nixbot.
+SELECT attr, status, right(coalesce(error, ''), 3000)::text AS error
+FROM build_attributes
+WHERE build_id = $1
+  AND status IN ('failed', 'failed_eval', 'dependency_failed', 'cached_failure')
+ORDER BY attr LIMIT 20;
