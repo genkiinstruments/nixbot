@@ -587,8 +587,11 @@ and, for the common fields, as `NIXBOT_EVENT_KIND`, `NIXBOT_ACTOR`,
 - `actor`: who caused it, `{ "name": "github:alice", "permission": "write" }`.
   It is absent for polled changes. Permissions come from the forge at delivery
   time.
-- `pullRequest`: `number`, `title`, `url`, `author` (shaped like `actor`),
-  `baseRef`, `headRef`, `headRev`, `labels`, `draft`, `isFork`, `merged`.
+- `pullRequest`: `number`, `title`, `body` (the description), `url`, `author`
+  (shaped like `actor`), `baseRef`, `headRef`, `headRev`, `labels`, `draft`,
+  `isFork`, `merged`. For `comment` it also has `comments`, the PR's
+  conversation oldest first (the first 100), each `author` (`"github:alice"`),
+  `body`, `createdAt`.
 - `build`: `number`, `url`, `status`, `branch`, `rev`. For `build_finished` it
   also has `previousStatus` and `failedAttrs`, and `rev` is the pushed commit.
 - `command`, `args`: for `comment`.

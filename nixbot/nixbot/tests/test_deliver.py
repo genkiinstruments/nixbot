@@ -43,7 +43,9 @@ PR = PullRequestInfo(
     author="github:dave",
     merged=False,
     open=True,
+    body="why",
 )
+COMMENTS = [{"author": "github:alice", "body": "looks risky", "createdAt": "t"}]
 
 
 class FakeForgePr:
@@ -64,6 +66,10 @@ class FakeForgePr:
             raise ForgeError(msg, status_code=status)
         assert number == self.pr.number
         return self.pr
+
+    async def list_comments(self, _info: Any, number: int) -> list[dict[str, Any]]:
+        assert number == self.pr.number
+        return COMMENTS
 
     async def is_self(self, user: str) -> bool:
         return user == "github:bot"
@@ -354,7 +360,12 @@ async def test_comment_and_close_webhooks_deliver(env: dict[str, Any]) -> None:
     assert rows["teardown"]["status"] == "succeeded"
     ran = {n: p for _k, n, p, _ in env["ran"]}
     assert (ran["apply"]["command"], ran["apply"]["args"]) == ("apply", "x")
+    # A command gets the whole conversation; other events only the body.
+    assert ran["apply"]["pullRequest"]["body"] == "why"
+    assert ran["apply"]["pullRequest"]["comments"] == COMMENTS
     assert ran["teardown"]["pullRequest"]["number"] == PR.number
+    assert ran["teardown"]["pullRequest"]["body"] == "why"
+    assert "comments" not in ran["teardown"]["pullRequest"]
     # Merge did not cancel the PR build.
     assert (
         await pool.fetchval("SELECT status FROM builds WHERE id = $1", build_id)

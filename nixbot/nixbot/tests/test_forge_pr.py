@@ -38,6 +38,7 @@ async def test_pull_request_info() -> None:
             json={
                 "number": 7,
                 "title": "t",
+                "body": "why",
                 "html_url": "u",
                 "state": "open",
                 "merged": False,
@@ -62,6 +63,34 @@ async def test_pull_request_info() -> None:
         True,
         True,
     )
+    assert pr.body == "why"
+
+
+async def test_list_comments() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.url.path == "/api/v1/repos/acme/app/issues/7/comments"
+        return httpx.Response(
+            200,
+            json=[
+                {
+                    "id": 1,
+                    "user": {"login": "alice"},
+                    "body": "looks risky",
+                    "created_at": "2026-11-01T09:00:00Z",
+                },
+                {"id": 2, "user": None, "body": None, "created_at": "later"},
+            ],
+        )
+
+    comments = await _client(httpx.MockTransport(handler)).list_comments(INFO, 7)
+    assert comments == [
+        {
+            "author": "gitea:alice",
+            "body": "looks risky",
+            "createdAt": "2026-11-01T09:00:00Z",
+        },
+        {"author": None, "body": "", "createdAt": "later"},
+    ]
 
 
 async def test_comment_replaces_marked_comment() -> None:

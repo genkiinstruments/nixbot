@@ -33,6 +33,8 @@ class PullRequestInfo:
     author: str | None
     merged: bool
     open: bool
+    # Description, "" when empty.
+    body: str = ""
 
     def payload(self, author_permission: str | None) -> dict[str, Any]:
         return {
@@ -49,6 +51,7 @@ class PullRequestInfo:
             if self.author
             else None,
             "merged": self.merged,
+            "body": self.body,
         }
 
 
@@ -78,6 +81,7 @@ def _github_like(forge: str, pr: dict[str, Any]) -> PullRequestInfo:
         author=f"{forge}:{login}" if login else None,
         merged=bool(pr.get("merged", False)),
         open=pr.get("state") == "open",
+        body=pr.get("body") or "",
     )
 
 
@@ -155,9 +159,36 @@ class ForgePrClient:
                 author=f"gitlab:{username}" if username else None,
                 merged=mr.get("state") == "merged",
                 open=mr.get("state") == "opened",
+                body=mr.get("description") or "",
             )
         msg = f"no {info.forge} client configured"
         raise ForgeError(msg)
+
+    async def list_comments(self, info: RepoInfo, number: int) -> list[dict[str, Any]]:
+        """The PR's conversation, oldest first (the first 100), each as
+        {"author": "forge:login" or None, "body", "createdAt"}. GitLab's
+        system notes (pushes, label changes) are left out."""
+        api = await self._comment_api(info, number)
+        query = "per_page=100"
+        if info.forge == "gitlab":
+            # GitLab lists notes newest first by default.
+            query += "&sort=asc&order_by=created_at"
+        response = await api.http.get(f"{api.list_url}?{query}", headers=api.headers)
+        _raise(response, info.forge, "comment listing")
+        comments = []
+        for c in response.json():
+            if c.get("system"):
+                continue
+            user = c.get("user") or c.get("author") or {}
+            login = user.get("login") or user.get("username")
+            comments.append(
+                {
+                    "author": f"{info.forge}:{login}" if login else None,
+                    "body": c.get("body") or "",
+                    "createdAt": c.get("created_at", ""),
+                }
+            )
+        return comments
 
     async def comment(
         self, info: RepoInfo, number: int, body: str, marker: str | None

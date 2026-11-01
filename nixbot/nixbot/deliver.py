@@ -501,6 +501,12 @@ async def _payload(
         payload["pullRequest"] = pr.payload(
             await s.forge_pr.permission(project, pr.author)
         )
+        if d.command is not None:
+            # Someone asked for something about this PR, so the effect
+            # gets the conversation it was asked in.
+            payload["pullRequest"]["comments"] = await s.forge_pr.list_comments(
+                info, d.pr_number
+            )
     if d.command is not None:
         payload["command"] = d.command
         payload["args"] = d.args or ""
